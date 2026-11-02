@@ -45,9 +45,7 @@ def make_extract_tool():
     Takes one or more URLs (already discovered via search) and returns the
     full cleaned text + a short summary. Lets specialists cite verbatim
     passages rather than search snippets.
-
-    `extract_depth='advanced'` handles JS-rendered pages but is ~2x slower
-    and slightly more expensive; switch to 'basic' if you don't need it.
-    """
+`extract_depth='advanced'` handles JS-rendered pages but is ~2x slower
+    and slightly more expensive; switch to 'basic' if you don't need it."""
     _require_key()
     return TavilyExtract(extract_depth="advanced")
