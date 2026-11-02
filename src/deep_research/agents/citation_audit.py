@@ -75,6 +75,14 @@ def _sanitize_json(raw: str) -> dict | None:
         except json.JSONDecodeError:
             pass
 
+    # Repair common break: '{ {' -> '{"claim_source_mappings": ['
+    if cleaned.startswith("{") and cleaned[1:].lstrip().startswith("{"):
+        repaired = '{"claim_source_mappings": [' + cleaned[1:].lstrip()[1:]
+        try:
+            return json.loads(repaired)
+        except json.JSONDecodeError:
+            pass
+
     return None
 
 
@@ -158,7 +166,9 @@ def citation_audit_node(state: ResearchState) -> dict[str, Any]:
     registry_blob = "\n".join(registry_blob_lines)
 
     model = model_for("citation_audit")
-    structured_model = model.with_structured_output(CitationAudit)
+    structured_model = model.with_structured_output(
+        CitationAudit, method="function_calling"
+    )
 
     user = (
         f"Research question:\n{state['question']}\n\n"
@@ -175,12 +185,12 @@ def citation_audit_node(state: ResearchState) -> dict[str, Any]:
     # Attempt 1: structured output
     try:
         audited: CitationAudit = structured_model.invoke(messages)
-    except ValidationError as ve:
+    except (ValidationError, json.JSONDecodeError, ValueError) as e:
         # Structured output failed validation. Try to recover raw content.
         raw_content = ""
         try:
             # Some LangChain wrappers expose .content on the response object
-            raw_content = getattr(ve, "content", "")
+            raw_content = getattr(e, "content", "")
         except Exception:
             raw_content = ""
 
@@ -197,6 +207,9 @@ def citation_audit_node(state: ResearchState) -> dict[str, Any]:
         if parsed is not None:
             try:
                 audited = CitationAudit.model_validate(parsed)
+                state.setdefault("warnings", []).append(
+                    "citation_audit: recovered via sanitation on attempt 1"
+                )
             except ValidationError:
                 audited = None
         else:
@@ -216,7 +229,7 @@ def citation_audit_node(state: ResearchState) -> dict[str, Any]:
             try:
                 # Try structured output again with stricter prompt
                 audited = structured_model.invoke(strict_messages)
-            except ValidationError:
+            except (ValidationError, json.JSONDecodeError, ValueError):
                 audited = None
             except Exception:
                 audited = None
@@ -228,7 +241,7 @@ def citation_audit_node(state: ResearchState) -> dict[str, Any]:
                         sources=registry,
                         flagged_issues=[
                             "audit parse failed (2 attempts): "
-                            + str(ve)
+                            + str(e)
                         ],
                     ),
                     "warnings": [
