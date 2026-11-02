@@ -107,13 +107,16 @@ def model_for(role: str, *, temperature: float = 0.0) -> BaseChatModel:
         # the langchain-anthropic package importable at module load time.
         from langchain_anthropic import ChatAnthropic
         return ChatAnthropic(model=name, temperature=temperature)
-    if name.startswith("gpt") or name.startswith("o1") or name.startswith("o3"):
-        from langchain_openai import ChatOpenAI
-        return ChatOpenAI(model=name, temperature=temperature)
 
-    raise ValueError(
-        f"Unknown provider for model '{name}' (role={role}). "
-        f"Expected name to start with claude/gpt/o1/o3."
+    # Any non-claude model is assumed to be OpenAI-compatible and served by
+    # AITunnel (or another OpenAI-compatible endpoint). This covers gpt-*,
+    # o1/o3, deepseek-*, glm-*, qwen-*, etc.
+    from langchain_openai import ChatOpenAI
+    return ChatOpenAI(
+        model=name,
+        temperature=temperature,
+        api_key=os.getenv("OPENAI_API_KEY"),
+        base_url=os.getenv("OPENAI_BASE_URL", "https://api.aitunnel.ru/v1/"),
     )
 
 
