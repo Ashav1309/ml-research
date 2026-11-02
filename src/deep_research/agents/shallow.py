@@ -10,10 +10,11 @@ to the deep path (scout → architect → ...).
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, ToolMessage
 from langgraph.prebuilt import create_react_agent
 
 from deep_research.config import SHALLOW_MAX_SEARCHES, model_for
@@ -52,6 +53,36 @@ def _extract_citations_from_text(text: str) -> list[Citation]:
     return [Citation(url=url) for url in urls]
 
 
+def _collect_structured_search_results(messages: list[Any]) -> list[dict[str, str]]:
+    """Extract URLs from ToolMessage outputs of web_search_structured.
+
+    The tool returns a JSON list of dicts with url/title/snippet. We parse
+    each ToolMessage whose name is 'web_search_structured' and collect all
+    URLs. Returns a list of dicts (each with url/title/snippet) for later
+    source-invariant checks.
+    """
+    collected: list[dict[str, str]] = []
+    for msg in messages:
+        if isinstance(msg, ToolMessage) and msg.name == "web_search_structured":
+            try:
+                data = json.loads(msg.content)
+                if isinstance(data, list):
+                    for item in data:
+                        if isinstance(item, dict) and "url" in item:
+                            collected.append(
+                                {
+                                    "url": str(item.get("url", "")),
+                                    "title": str(item.get("title", "")),
+                                    "snippet": str(item.get("snippet", "")),
+                                }
+                            )
+            except (json.JSONDecodeError, TypeError):
+                # Ignore malformed tool output; the source invariant will
+                # still flag any citation that doesn't match a known URL.
+                continue
+    return collected
+
+
 def shallow_researcher_node(state: ResearchState) -> dict[str, Any]:
     """Run a small ReAct loop. Set shallow_sufficient flag for the router."""
     agent = _get_shallow_agent()
@@ -61,9 +92,29 @@ def shallow_researcher_node(state: ResearchState) -> dict[str, Any]:
     sufficient = "INSUFFICIENT" not in answer.upper()
     citations = _extract_citations_from_text(answer)
 
-    # Store structured search results for source invariant enforcement
-    last_search_results = state.get("_last_search_results", [])
-    search_urls = {c["url"] for c in last_search_results if isinstance(c, dict) and "url" in c}
+    # Collect structured search results from the agent's tool messages
+    structured_results = _collect_structured_search_results(result["messages"])
+
+    # Merge with any existing results (do not overwrite across iterations)
+    existing = state.get("_last_search_results", [])
+    merged = list(existing)  # shallow copy
+    merged.extend(structured_results)
+
+    # Deduplicate by URL while preserving order
+    seen_urls = set()
+    deduped = []
+    for item in merged:
+        url = item.get("url", "")
+        if url and url not in seen_urls:
+            seen_urls.add(url)
+            deduped.append(item)
+
+    # Save back to state
+    state["_last_search_results"] = deduped
+
+    # Enforce source invariant: every citation URL must appear in the
+    # structured search results.
+    search_urls = {c["url"] for c in deduped if isinstance(c, dict) and "url" in c}
 
     for c in citations:
         if c.url not in search_urls:
@@ -75,7 +126,7 @@ def shallow_researcher_node(state: ResearchState) -> dict[str, Any]:
         "shallow_answer": answer,
         "shallow_citations": citations,
         "shallow_sufficient": sufficient,
-        "_last_search_results": last_search_results,
+        "_last_search_results": deduped,
     }
 
 
