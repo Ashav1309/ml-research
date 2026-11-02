@@ -210,6 +210,10 @@ def shallow_finalize_node(state: ResearchState) -> dict[str, Any]:
             prefix = "UNSUPPORTED:"
         elif issue.startswith("UNUSED_SOURCE:"):
             prefix = "UNUSED_SOURCE:"
+        elif issue.startswith("SINGLE_SOURCE:"):
+            prefix = "SINGLE_SOURCE:"
+        elif issue.startswith("SOURCE_QUALITY:"):
+            prefix = "SOURCE_QUALITY:"
         if not prefix:
             continue
 
@@ -222,11 +226,19 @@ def shallow_finalize_node(state: ResearchState) -> dict[str, Any]:
         else:
             # Use text after prefix up to first period
             after = issue[len(prefix):].strip()
-            period_pos = after.find(".")
-            if period_pos != -1:
-                fragment = after[:period_pos]
+            # Try: "The specific claim that X is supported" / "Claim about X"
+            m2 = re.search(
+                r"(?:claim that|claim about|claim:|hyperparameters?|the fact that|that)\s+(.{15,180}?)(?=\s+(?:is supported|are supported|is cited|relies|has no|appears|may))",
+                after, re.IGNORECASE,
+            )
+            if m2:
+                fragment = m2.group(1).strip()
             else:
-                fragment = after
+                # Fallback: first sentence, max 120 chars
+                period_pos = after.find(".")
+                fragment = (after[:period_pos] if period_pos != -1 else after).strip()
+                if len(fragment) > 120:
+                    fragment = fragment[:120].rsplit(" ", 1)[0]
 
         if not fragment:
             continue
