@@ -260,7 +260,13 @@ Tasks:
    and the snippet that supposedly supports it, single-source major claims.
 
 The writer will be instructed to cite ONLY the sources in your registry.
-Do not invent sources. If a claim has no support, list it in flagged_issues."""
+Do not invent sources. If a claim has no support, list it in flagged_issues.
+
+CRITICAL: Before writing SNIPPET_MISMATCH, re-read the FULL snippet text
+for that source. If the snippet contains the keyword or synonym (e.g.
+'residual connection', 'layer normalization', 'softmax', 'positional
+encoding', 'sinusoidal'), do NOT flag it. Only flag when the snippet
+genuinely lacks support."""
 
 # ─── Writer ────────────────────────────────────────────────────────────────
 
@@ -285,7 +291,16 @@ Hard rules:
 - DO NOT cite a source not in the registry
 - DO NOT make claims not present in the synthesis brief or specialist notes
 - DO NOT invent statistics, dates, or quotes
-- Write for a smart non-specialist. Concrete > abstract. No filler."""
+- Write for a smart non-specialist. Concrete > abstract. No filler.
+
+When composing the final report, read the citation_audit.flagged_issues
+list carefully. For any claim that appears in flagged_issues with
+SNIPPET_MISMATCH, SINGLE_SOURCE, or UNUSED_SOURCE:
+- Either REMOVE the claim from the report, OR
+- Mark it explicitly with "[unverified]" in the text.
+Do NOT present unverified claims as established facts. If the audit says a
+source has no snippet support for a specific claim, that claim must not be
+stated without a qualifier."""
 
 # ─── Refiner ───────────────────────────────────────────────────────────────
 

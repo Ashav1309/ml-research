@@ -114,7 +114,8 @@ def citation_audit_node(state: ResearchState) -> dict[str, Any]:
     registry_blob_lines: list[str] = []
     for s in registry:
         snippet = snippet_by_url.get(s.url, "")
-        snippet_display = snippet[:300] if snippet else "(no snippet)"
+        # Use full snippet (no truncation) to avoid false SNIPPET_MISMATCH
+        snippet_display = snippet if snippet else "(no snippet)"
         line = f"- {s.id}: {s.url}"
         if s.title:
             line += f" | title: {s.title}"
@@ -156,5 +157,17 @@ def citation_audit_node(state: ResearchState) -> dict[str, Any]:
     valid_ids = {s.id for s in audited.sources}
     for cm in audited.claim_source_mappings:
         cm.source_ids = [sid for sid in cm.source_ids if sid in valid_ids]
+
+    # DEFECT B: flag sources that are in the registry but have no claim mappings
+    mapped_ids = set()
+    for cm in audited.claim_source_mappings:
+        mapped_ids.update(cm.source_ids)
+
+    for s in audited.sources:
+        if s.id not in mapped_ids:
+            audited.flagged_issues.append(
+                f"UNUSED_SOURCE: {s.id} ({s.url}) is in the registry but not mapped "
+                "to any claim. Do not cite it in the final report unless a claim is added."
+            )
 
     return {"citation_audit": audited}
