@@ -199,7 +199,65 @@ def shallow_finalize_node(state: ResearchState) -> dict[str, Any]:
     audit = state.get("citation_audit")
     issues = audit.flagged_issues if audit else []
 
+    # Mark unverified claims in the answer text
+    marked_count = 0
+    for issue in issues:
+        # Only handle specific prefixes
+        prefix = None
+        if issue.startswith("SNIPPET_MISMATCH:"):
+            prefix = "SNIPPET_MISMATCH:"
+        elif issue.startswith("UNSUPPORTED:"):
+            prefix = "UNSUPPORTED:"
+        elif issue.startswith("UNUSED_SOURCE:"):
+            prefix = "UNUSED_SOURCE:"
+        if not prefix:
+            continue
+
+        # Extract claim fragment
+        fragment = ""
+        # Try single-quoted substring
+        m = re.search(r"'([^']*)'", issue)
+        if m:
+            fragment = m.group(1)
+        else:
+            # Use text after prefix up to first period
+            after = issue[len(prefix):].strip()
+            period_pos = after.find(".")
+            if period_pos != -1:
+                fragment = after[:period_pos]
+            else:
+                fragment = after
+
+        if not fragment:
+            continue
+
+        # Case-insensitive search in answer
+        idx = answer.lower().find(fragment.lower())
+        if idx == -1:
+            continue
+
+        # Find end of sentence containing the fragment
+        # Search for next sentence terminator after the match
+        end_pos = idx + len(fragment)
+        while end_pos < len(answer):
+            ch = answer[end_pos]
+            if ch in ".!?":
+                # Insert after terminator
+                insert_pos = end_pos + 1
+                answer = answer[:insert_pos] + " [unverified]" + answer[insert_pos:]
+                marked_count += 1
+                break
+            end_pos += 1
+
+    # Build final report
     report = answer.strip()
+    if marked_count:
+        header = (
+            f"> ⚠️ This report contains {marked_count} claim(s) marked [unverified] — "
+            "see 'Citation audit flags' below. Verify before relying on them.\n\n"
+        )
+        report = header + report
+
     if issues:
         report += "\n\n---\n**Citation audit flags:**\n" + "\n".join(
             f"- {issue}" for issue in issues

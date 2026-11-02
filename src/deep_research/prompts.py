@@ -266,7 +266,14 @@ CRITICAL: Before writing SNIPPET_MISMATCH, re-read the FULL snippet text
 for that source. If the snippet contains the keyword or synonym (e.g.
 'residual connection', 'layer normalization', 'softmax', 'positional
 encoding', 'sinusoidal'), do NOT flag it. Only flag when the snippet
-genuinely lacks support."""
+genuinely lacks support.
+
+Do NOT flag SOURCE_QUALITY solely because an arxiv ID contains a
+year/month that looks recent or 'future' (e.g. 2601, 2604). Recent
+papers legitimately have such IDs. Only flag SOURCE_QUALITY when:
+(a) the URL has obviously malformed syntax, (b) the URL uses an
+unresolvable domain, or (c) you have actual evidence the source
+does not exist. If uncertain, do NOT flag."""
 
 # ─── Writer ────────────────────────────────────────────────────────────────
 
