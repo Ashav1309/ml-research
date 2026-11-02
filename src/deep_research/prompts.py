@@ -70,7 +70,11 @@ Output a concise answer (≤ 250 words). Include citation URLs inline as [n] and
 list them at the end.
 
 If after 3 searches you still cannot answer confidently, say so explicitly and
-mark the answer as INSUFFICIENT — the system will escalate to deep research."""
+mark the answer as INSUFFICIENT — the system will escalate to deep research.
+
+You MUST use ONLY URLs that appear in the web_search_structured tool output.
+Do NOT add URLs from your training data. If the tool returned no sources,
+return an empty citations list."""
 
 # ─── Scout ─────────────────────────────────────────────────────────────────
 

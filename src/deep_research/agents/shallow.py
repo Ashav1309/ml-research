@@ -19,7 +19,7 @@ from langgraph.prebuilt import create_react_agent
 from deep_research.config import SHALLOW_MAX_SEARCHES, model_for
 from deep_research.prompts import SHALLOW_RESEARCHER_SYSTEM
 from deep_research.state import Citation, ResearchState
-from deep_research.tools import make_search_tool
+from deep_research.tools import make_search_tool, make_structured_search_tool
 
 _shallow_agent = None
 
@@ -30,7 +30,10 @@ def _get_shallow_agent():
     if _shallow_agent is None:
         _shallow_agent = create_react_agent(
             model=model_for("shallow"),
-            tools=[make_search_tool(max_results=SHALLOW_MAX_SEARCHES)],
+            tools=[
+                make_search_tool(max_results=SHALLOW_MAX_SEARCHES),
+                make_structured_search_tool(max_results=SHALLOW_MAX_SEARCHES),
+            ],
             prompt=SHALLOW_RESEARCHER_SYSTEM,
         )
     return _shallow_agent
@@ -58,10 +61,21 @@ def shallow_researcher_node(state: ResearchState) -> dict[str, Any]:
     sufficient = "INSUFFICIENT" not in answer.upper()
     citations = _extract_citations_from_text(answer)
 
+    # Store structured search results for source invariant enforcement
+    last_search_results = state.get("_last_search_results", [])
+    search_urls = {c["url"] for c in last_search_results if isinstance(c, dict) and "url" in c}
+
+    for c in citations:
+        if c.url not in search_urls:
+            state.setdefault("warnings", []).append(
+                f"citation url not from web_search: {c.url}"
+            )
+
     return {
         "shallow_answer": answer,
         "shallow_citations": citations,
         "shallow_sufficient": sufficient,
+        "_last_search_results": last_search_results,
     }
 
 

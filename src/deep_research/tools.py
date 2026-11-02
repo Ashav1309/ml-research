@@ -18,7 +18,10 @@ The list of allowed academic domains can be overridden with the
 
 from __future__ import annotations
 
+import json
 import os
+import re
+from typing import Any
 
 from langchain_core.tools import tool
 from openai import OpenAI
@@ -154,3 +157,86 @@ def make_extract_tool(model: str | None = None):
         return (resp.choices[0].message.content or "").strip()
 
     return web_extract
+
+
+def make_structured_search_tool(max_results: int = 5, model: str | None = None):
+    """Build an AITunnel web_search tool that returns structured JSON.
+
+    The tool returns a list of dicts, each with url, title, snippet.
+    """
+    _require_key()
+    client = _get_client()
+    chosen_model = model or os.getenv("SCOUT_MODEL", "deepseek-v4-flash-0731")
+
+    SYSTEM = (
+        "You are a web search assistant. Search the web and return ONLY a JSON "
+        "object with this exact shape: "
+        '{"sources": [{"url": "...", "title": "...", "snippet": "..."}]}. '
+        "Include 3-5 sources. No prose, no markdown fences, only JSON."
+    )
+
+    @tool("web_search_structured")
+    def web_search_structured(query: str) -> list[dict[str, str]]:
+        """Search the web and return structured sources."""
+        resp = client.chat.completions.create(
+            model=chosen_model,
+            messages=[
+                {"role": "system", "content": SYSTEM},
+                {"role": "user", "content": query},
+            ],
+            tools=[
+                {
+                    "type": "aitunnel:web_search",
+                    "parameters": {
+                        "engine": "exa",
+                        "max_results": max_results,
+                        "allowed_domains": _get_allowed_domains(),
+                        "return_citations": True,
+                    },
+                }
+            ],
+        )
+
+        content = (resp.choices[0].message.content or "").strip()
+        if not content:
+            return []
+
+        # Try direct JSON parse
+        try:
+            data = json.loads(content)
+            sources = data.get("sources", [])
+            if isinstance(sources, list):
+                return [
+                    {
+                        "url": str(s.get("url", "")),
+                        "title": str(s.get("title", "")),
+                        "snippet": str(s.get("snippet", "")),
+                    }
+                    for s in sources
+                    if isinstance(s, dict)
+                ]
+        except json.JSONDecodeError:
+            pass
+
+        # Fallback: extract first {...} block with regex
+        match = re.search(r"\{.*\}", content, re.DOTALL)
+        if match:
+            try:
+                data = json.loads(match.group(0))
+                sources = data.get("sources", [])
+                if isinstance(sources, list):
+                    return [
+                        {
+                            "url": str(s.get("url", "")),
+                            "title": str(s.get("title", "")),
+                            "snippet": str(s.get("snippet", "")),
+                        }
+                        for s in sources
+                        if isinstance(s, dict)
+                    ]
+            except json.JSONDecodeError:
+                pass
+
+        return []
+
+    return web_search_structured
