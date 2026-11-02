@@ -83,6 +83,34 @@ def _collect_structured_search_results(messages: list[Any]) -> list[dict[str, st
     return collected
 
 
+def _normalize_url(url: str) -> str:
+    """Normalize URL for comparison.
+
+    - strip trailing slash
+    - lowercase host
+    - treat arxiv.org/abs/<id> and arxiv.org/html/<id> as equivalent by
+      extracting the arxiv id.
+    """
+    if not url:
+        return ""
+    u = url.strip().rstrip("/")
+    # Lowercase host only (scheme and path remain as-is)
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(u)
+        host = parsed.netloc.lower()
+        path = parsed.path
+        # arxiv special handling
+        m = re.search(r'arxiv\.org/(?:abs|html|pdf)/([0-9.]+)', u, re.IGNORECASE)
+        if m:
+            arxiv_id = m.group(1)
+            return f"arxiv.org/abs/{arxiv_id}"
+        # Rebuild with lowercased host
+        return f"{parsed.scheme}://{host}{path}"
+    except Exception:
+        return u.lower()
+
+
 def shallow_researcher_node(state: ResearchState) -> dict[str, Any]:
     """Run a small ReAct loop. Set shallow_sufficient flag for the router."""
     agent = _get_shallow_agent()
@@ -112,12 +140,43 @@ def shallow_researcher_node(state: ResearchState) -> dict[str, Any]:
     # Save back to state
     state["_last_search_results"] = deduped
 
+    # Build normalized lookup: norm_url -> {title, snippet}
+    norm_lookup: dict[str, dict[str, str]] = {}
+    for item in deduped:
+        norm = _normalize_url(item.get("url", ""))
+        if norm:
+            norm_lookup[norm] = {
+                "title": item.get("title", ""),
+                "snippet": item.get("snippet", ""),
+            }
+
+    # Post-process citations: fill missing title/snippet, drop unverified
+    verified_citations: list[Citation] = []
+    for c in citations:
+        norm = _normalize_url(c.url)
+        if norm in norm_lookup:
+            info = norm_lookup[norm]
+            # Fill missing fields
+            if not c.title and info.get("title"):
+                c.title = info["title"]
+            if not c.snippet and info.get("snippet"):
+                c.snippet = info["snippet"]
+            verified_citations.append(c)
+        else:
+            # URL not from web_search_structured
+            state.setdefault("warnings", []).append(
+                f"citation url not from web_search: {c.url}"
+            )
+
+    # Replace citations with verified ones
+    citations = verified_citations
+
     # Enforce source invariant: every citation URL must appear in the
     # structured search results.
-    search_urls = {c["url"] for c in deduped if isinstance(c, dict) and "url" in c}
+    search_urls = {_normalize_url(c["url"]) for c in deduped if isinstance(c, dict) and "url" in c}
 
     for c in citations:
-        if c.url not in search_urls:
+        if _normalize_url(c.url) not in search_urls:
             state.setdefault("warnings", []).append(
                 f"citation url not from web_search: {c.url}"
             )

@@ -76,10 +76,10 @@ You MUST use ONLY URLs that appear in the web_search_structured tool output.
 Do NOT add URLs from your training data. If the tool returned no sources,
 return an empty citations list.
 
-When filling the shallow_citations list, copy `url`, `title`, and `snippet`
-VERBATIM from the web_search_structured tool output. Do NOT leave `title` or
-`snippet` empty. Do NOT generate your own titles. If the tool output has no
-title or snippet for a URL, omit that URL from citations entirely."""
+When filling shallow_citations, you MUST copy url, title, and snippet
+VERBATIM from the web_search_structured tool output. Never leave
+title or snippet empty. Never invent a title. If a URL has no title
+or snippet in the tool output, omit that URL from citations."""
 
 # ─── Scout ─────────────────────────────────────────────────────────────────
 

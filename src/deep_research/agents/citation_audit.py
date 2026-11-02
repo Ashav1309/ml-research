@@ -55,7 +55,43 @@ def citation_audit_node(state: ResearchState) -> dict[str, Any]:
             "warnings": ["citation_audit: no citations to audit"],
         }
 
-    registry = _dedupe_to_registry(cites)
+    # Use verified sources from _last_search_results if available
+    verified_sources = state.get("_last_search_results", [])
+    verified_by_url: dict[str, dict[str, str]] = {}
+    for src in verified_sources:
+        if isinstance(src, dict) and "url" in src:
+            verified_by_url[src["url"]] = {
+                "title": src.get("title", ""),
+                "snippet": src.get("snippet", ""),
+            }
+
+    # Build registry using verified titles/snippets where possible
+    registry: list[SourceRecord] = []
+    seen_urls: set[str] = set()
+    for c in cites:
+        if not c.url or c.url in seen_urls:
+            continue
+        seen_urls.add(c.url)
+        # Prefer verified title/snippet
+        info = verified_by_url.get(c.url, {})
+        title = info.get("title", c.title)
+        snippet = info.get("snippet", c.snippet)
+        # If no title/snippet, mark as unknown/low
+        if not title and not snippet:
+            source_type = "unknown"
+            quality = "low"
+        else:
+            source_type = "unknown"  # will be refined by model later
+            quality = "medium"
+        registry.append(
+            SourceRecord(
+                id=f"S{len(registry) + 1}",
+                url=c.url,
+                title=title,
+                source_type=source_type,
+                quality=quality,
+            )
+        )
 
     # Ask the model to classify source quality and (best-effort) map claims to
     # source ids. We pre-build the registry so the model never invents source ids.

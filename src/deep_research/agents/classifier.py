@@ -21,6 +21,19 @@ def classifier_node(state: ResearchState) -> dict[str, Any]:
 
     Short-circuits (no LLM call) if `intent` is already in state — this is how
     `--path shallow|deep` bypasses the classifier."""
+    # Early return when force_path is set (CLI --path)
+    fp = state.get("force_path")
+    if fp:
+        return {
+            "intent": IntentClassification(
+                route=f"{fp}_research",
+                reasoning=f"forced via --path {fp}",
+                clarification_question=None,
+                expected_output_type="factual_answer",
+                research_depth=fp,
+            )
+        }
+
     if state.get("intent"):
         return {}
     model = model_for("classifier").with_structured_output(IntentClassification)
