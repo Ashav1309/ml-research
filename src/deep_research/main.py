@@ -17,6 +17,7 @@ import os
 import time
 from typing import Any
 
+import mlflow
 from dotenv import load_dotenv
 from rich.console import Console
 from rich.markdown import Markdown
@@ -161,50 +162,62 @@ def cli() -> None:
         console.print(f"[dim]Max iterations: {args.max_iter}[/]")
     console.print()
 
-    start = time.monotonic()
-    early_exit: str | None = None
+    mlflow.set_experiment("deep-research")
+    mlflow.langchain.autolog()
 
-    try:
-        for event in graph.stream(dict(state), stream_mode="updates"):
-            for node_name, update in event.items():
-                _merge_update(state, update)
-                msg = _format_progress(node_name, update)
-                console.print(
-                    f"[dim]✓ {node_name}[/]" + (f" — {msg}" if msg else "")
-                )
+    with mlflow.start_run(run_name=f"deep-research:{(args.question or '')[:60]}"):
+        mlflow.log_param("question", args.question or "")
+        mlflow.log_param("path", args.path or "auto")
+        mlflow.log_param("scout_model", os.getenv("SCOUT_MODEL", ""))
+        mlflow.log_param("refiner_model", os.getenv("REFINER_MODEL", ""))
+        mlflow.log_param("academic_domains", os.getenv("ACADEMIC_DOMAINS", "default"))
 
-                if args.max_time and (time.monotonic() - start) > args.max_time:
-                    early_exit = f"time budget ({args.max_time}s) exceeded"
-                    break
-            if early_exit:
-                break
-    except KeyboardInterrupt:
-        early_exit = "interrupted (Ctrl-C)"
+        start = time.monotonic()
+        early_exit: str | None = None
 
-    if early_exit:
-        console.print(
-            f"\n[yellow]Early exit:[/] {early_exit}. "
-            "Finalizing from partial state...\n"
-        )
         try:
-            report = finalize_from_partial(state)
+            for event in graph.stream(dict(state), stream_mode="updates"):
+                for node_name, update in event.items():
+                    _merge_update(state, update)
+                    msg = _format_progress(node_name, update)
+                    console.print(
+                        f"[dim]✓ {node_name}[/]" + (f" — {msg}" if msg else "")
+                    )
+
+                    if args.max_time and (time.monotonic() - start) > args.max_time:
+                        early_exit = f"time budget ({args.max_time}s) exceeded"
+                        break
+                if early_exit:
+                    break
         except KeyboardInterrupt:
-            # Second Ctrl-C during finalize — bail with what's in state.
-            console.print("[red]Finalize also interrupted; dumping raw state notes.[/]")
-            report = state.get("draft_report") or state.get("shallow_answer") or "(no report)"
-    else:
-        report = state.get("final_report", "(no report produced)")
+            early_exit = "interrupted (Ctrl-C)"
 
-    elapsed = time.monotonic() - start
-    console.print(f"\n[dim]Total time: {elapsed:.1f}s[/]")
+        if early_exit:
+            console.print(
+                f"\n[yellow]Early exit:[/] {early_exit}. "
+                "Finalizing from partial state...\n"
+            )
+            try:
+                report = finalize_from_partial(state)
+            except KeyboardInterrupt:
+                # Second Ctrl-C during finalize — bail with what's in state.
+                console.print("[red]Finalize also interrupted; dumping raw state notes.[/]")
+                report = state.get("draft_report") or state.get("shallow_answer") or "(no report)"
+        else:
+            report = state.get("final_report", "(no report produced)")
 
-    if args.out:
-        with open(args.out, "w") as f:
-            f.write(report)
-        console.print(f"\n[green]Report saved to {args.out}[/]")
-    else:
-        console.print("\n[bold green]── Report ──[/]\n")
-        console.print(Markdown(report))
+        elapsed = time.monotonic() - start
+        console.print(f"\n[dim]Total time: {elapsed:.1f}s[/]")
+
+        if args.out:
+            with open(args.out, "w") as f:
+                f.write(report)
+            console.print(f"\n[green]Report saved to {args.out}[/]")
+        else:
+            console.print("\n[bold green]── Report ──[/]\n")
+            console.print(Markdown(report))
+
+        mlflow.log_text(report, "report.md")
 
 
 if __name__ == "__main__":
