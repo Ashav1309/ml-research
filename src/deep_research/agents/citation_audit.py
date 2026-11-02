@@ -104,10 +104,23 @@ def citation_audit_node(state: ResearchState) -> dict[str, Any]:
     if not notes_blob:
         notes_blob = state.get("shallow_answer", "") or "(no notes)"
 
-    registry_blob = "\n".join(
-        f"- {s.id}: {s.url}" + (f" ({s.title})" if s.title else "")
-        for s in registry
-    )
+    # Build registry blob with snippets from shallow_citations
+    shallow_citations = state.get("shallow_citations", []) or []
+    snippet_by_url: dict[str, str] = {}
+    for sc in shallow_citations:
+        if sc.url and sc.snippet:
+            snippet_by_url[sc.url] = sc.snippet
+
+    registry_blob_lines: list[str] = []
+    for s in registry:
+        snippet = snippet_by_url.get(s.url, "")
+        snippet_display = snippet[:300] if snippet else "(no snippet)"
+        line = f"- {s.id}: {s.url}"
+        if s.title:
+            line += f" | title: {s.title}"
+        line += f" | snippet: \"{snippet_display}\""
+        registry_blob_lines.append(line)
+    registry_blob = "\n".join(registry_blob_lines)
 
     model = model_for("citation_audit").with_structured_output(CitationAudit)
     user = (

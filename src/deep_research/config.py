@@ -21,6 +21,7 @@ Env var convention:  <ROLE>_MODEL
 from __future__ import annotations
 
 import os
+import sys
 
 from langchain_core.language_models import BaseChatModel
 
@@ -30,18 +31,18 @@ from langchain_core.language_models import BaseChatModel
 #   low tier  — classification, compression, light edits
 
 OPENAI_DEFAULTS: dict[str, str] = {
-    "classifier":     "gpt-4.1-mini",
-    "meta":           "gpt-4.1-mini",
-    "clarifier":      "gpt-4.1-mini",
-    "shallow":        "gpt-4.1-mini",
-    "scout":          "gpt-4.1",
-    "architect":      "gpt-4.1",
-    "specialist":     "gpt-4.1",
-    "synthesis":      "gpt-4.1-mini",
-    "gap_analyzer":   "gpt-4.1",
-    "citation_audit": "gpt-4.1",
-    "writer":         "gpt-4.1",
-    "refiner":        "gpt-4.1-mini",
+    "classifier":     "deepseek-v4.1-flash-1017",
+    "meta":           "deepseek-v4.1-flash-1017",
+    "clarifier":      "deepseek-v4.1-flash-1017",
+    "shallow":        "deepseek-v4.1-flash-1017",
+    "scout":          "deepseek-v4.1-flash-1017",
+    "architect":      "deepseek-v4-pro-0813",
+    "specialist":     "deepseek-v4-pro-0813",
+    "synthesis":      "deepseek-v4-pro-0813",
+    "gap_analyzer":   "glm-5.2",
+    "citation_audit": "glm-5.2",
+    "writer":         "deepseek-v4-pro-0813",
+    "refiner":        "glm-5.2",
 }
 
 ANTHROPIC_DEFAULTS: dict[str, str] = {
@@ -57,6 +58,13 @@ ANTHROPIC_DEFAULTS: dict[str, str] = {
     "citation_audit": "claude-sonnet-4-6",
     "writer":         "claude-opus-4-7",
     "refiner":        "claude-haiku-4-5-20251001",
+}
+
+
+# Backward-compatible aliases for old env var names.
+# Example: SHALLOW_RESEARCHER_MODEL is accepted for the "shallow" role.
+ROLE_ENV_ALIASES: dict[str, str] = {
+    "shallow": "SHALLOW_RESEARCHER",
 }
 
 
@@ -92,15 +100,28 @@ def model_for(role: str, *, temperature: float = 0.0) -> BaseChatModel:
 
     Resolution order:
         1. env var <ROLE>_MODEL (provider inferred from the model-name prefix)
-        2. default for the auto-detected / explicit LLM_PROVIDER
+        2. legacy alias env var (e.g. SHALLOW_RESEARCHER_MODEL)
+        3. default for the auto-detected / explicit LLM_PROVIDER
     """
-    env_key = f"{role.upper()}_MODEL"
-    name = os.getenv(env_key)
+    primary_key = f"{role.upper()}_MODEL"
+    alias_role = ROLE_ENV_ALIASES.get(role)
+    alias_key = f"{alias_role}_MODEL" if alias_role else None
+
+    name = os.getenv(primary_key)
+    if not name and alias_key:
+        name = os.getenv(alias_key)
+
     if not name:
         provider = _detect_provider()
-        name = _defaults_for(provider).get(role)
-    if not name:
-        raise ValueError(f"No model configured for role '{role}' (set {env_key})")
+        default_name = _defaults_for(provider).get(role)
+        if not default_name:
+            raise ValueError(f"No model configured for role '{role}' (set {primary_key})")
+        print(
+            f"[config] role={role} env {primary_key} not set, "
+            f"using default {default_name}",
+            file=sys.stderr,
+        )
+        name = default_name
 
     if name.startswith("claude"):
         # Lazy import so a project running purely on OpenAI keys doesn't need
