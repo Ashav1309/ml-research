@@ -74,7 +74,12 @@ mark the answer as INSUFFICIENT — the system will escalate to deep research.
 
 You MUST use ONLY URLs that appear in the web_search_structured tool output.
 Do NOT add URLs from your training data. If the tool returned no sources,
-return an empty citations list."""
+return an empty citations list.
+
+When filling the shallow_citations list, copy `url`, `title`, and `snippet`
+VERBATIM from the web_search_structured tool output. Do NOT leave `title` or
+`snippet` empty. Do NOT generate your own titles. If the tool output has no
+title or snippet for a URL, omit that URL from citations entirely."""
 
 # ─── Scout ─────────────────────────────────────────────────────────────────
 
