@@ -11,9 +11,12 @@ The writer is instructed to cite ONLY ids from this registry.
 
 from __future__ import annotations
 
+import json
+import re
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import ValidationError
 
 from deep_research.config import model_for
 from deep_research.prompts import CITATION_AUDIT_SYSTEM
@@ -42,6 +45,37 @@ def _dedupe_to_registry(cites: list[Citation]) -> list[SourceRecord]:
             continue
         seen[c.url] = SourceRecord(id=f"S{len(seen) + 1}", url=c.url, title=c.title)
     return list(seen.values())
+
+
+def _sanitize_json(raw: str) -> dict | None:
+    """Try to extract a valid JSON object from a possibly malformed string."""
+    if not raw:
+        return None
+
+    # Strip markdown fences
+    cleaned = raw.strip()
+    cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+    cleaned = re.sub(r"\s*```$", "", cleaned)
+
+    # Find first { and last }
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        candidate = cleaned[start : end + 1]
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            pass
+
+    # Fallback: regex for a complete {...} block
+    match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(0))
+        except json.JSONDecodeError:
+            pass
+
+    return None
 
 
 def citation_audit_node(state: ResearchState) -> dict[str, Any]:
@@ -123,7 +157,9 @@ def citation_audit_node(state: ResearchState) -> dict[str, Any]:
         registry_blob_lines.append(line)
     registry_blob = "\n".join(registry_blob_lines)
 
-    model = model_for("citation_audit").with_structured_output(CitationAudit)
+    model = model_for("citation_audit")
+    structured_model = model.with_structured_output(CitationAudit)
+
     user = (
         f"Research question:\n{state['question']}\n\n"
         f"Pre-built source registry (use these ids exactly, do not invent new ones):\n"
@@ -134,11 +170,74 @@ def citation_audit_node(state: ResearchState) -> dict[str, Any]:
         "registry above."
     )
 
+    messages = [SystemMessage(content=CITATION_AUDIT_SYSTEM), HumanMessage(content=user)]
+
+    # Attempt 1: structured output
     try:
-        audited: CitationAudit = model.invoke(
-            [SystemMessage(content=CITATION_AUDIT_SYSTEM), HumanMessage(content=user)]
-        )
+        audited: CitationAudit = structured_model.invoke(messages)
+    except ValidationError as ve:
+        # Structured output failed validation. Try to recover raw content.
+        raw_content = ""
+        try:
+            # Some LangChain wrappers expose .content on the response object
+            raw_content = getattr(ve, "content", "")
+        except Exception:
+            raw_content = ""
+
+        if not raw_content:
+            # Fallback: call model without structured output
+            try:
+                raw_msg = model.invoke(messages)
+                raw_content = raw_msg.content
+            except Exception:
+                raw_content = ""
+
+        # Sanitize JSON
+        parsed = _sanitize_json(raw_content)
+        if parsed is not None:
+            try:
+                audited = CitationAudit.model_validate(parsed)
+            except ValidationError:
+                audited = None
+        else:
+            audited = None
+
+        if audited is None:
+            # Retry once with stricter prompt
+            strict_system = (
+                CITATION_AUDIT_SYSTEM
+                + "\n\nReturn ONLY valid JSON matching this schema. Do not wrap in markdown. "
+                "Do not add comments. Start with '{' and end with '}'. Output nothing else."
+            )
+            strict_messages = [
+                SystemMessage(content=strict_system),
+                HumanMessage(content=user),
+            ]
+            try:
+                # Try structured output again with stricter prompt
+                audited = structured_model.invoke(strict_messages)
+            except ValidationError:
+                audited = None
+            except Exception:
+                audited = None
+
+            if audited is None:
+                # Final fallback: raw registry with parse failure
+                return {
+                    "citation_audit": CitationAudit(
+                        sources=registry,
+                        flagged_issues=[
+                            "audit parse failed (2 attempts): "
+                            + str(ve)
+                        ],
+                    ),
+                    "warnings": [
+                        "citation_audit: parse failed after retry; using raw registry only"
+                    ],
+                }
+
     except Exception as e:  # noqa: BLE001
+        # Non-validation error (e.g. API failure)
         return {
             "citation_audit": CitationAudit(
                 sources=registry,
