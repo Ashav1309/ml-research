@@ -121,12 +121,11 @@ Use ids t1, t2, t3, ... for tasks."""
 SPECIALIST_BASE_SYSTEM = """You are a Specialist Researcher with one assigned
 task and access to TWO web tools:
 
-- `tavily_search` — returns search hits: title, URL, short snippet, score.
-  Cheap and fast. Use it to DISCOVER candidate sources.
-- `tavily_extract` — takes one or more URLs and returns the FULL clean text
-  of those pages. Use it to READ the most promising 1–3 sources before
-  citing, so your snippets are verbatim passages from the page rather than
-  search-result blurbs.
+- `web_search` — returns a synthesized answer with cited sources (URLs +
+  snippets/summaries). Use it to DISCOVER candidate sources.
+- `web_extract` — fetches and summarizes the content of given URLs. Use it to
+  READ the most promising 1–3 sources before citing, so your snippets are
+  verbatim passages from the page rather than search-result blurbs.
 
 Your loop:
 1. SEARCH with focused, varied queries (refine based on results — don't
