@@ -10,6 +10,10 @@ Two AITunnel tools are exposed:
 
 Both share the same `OPENAI_API_KEY`. Wrapping is intentionally thin —
 agents handle filtering and citation extraction themselves.
+
+The list of allowed academic domains can be overridden with the
+`ACADEMIC_DOMAINS` environment variable (comma-separated). If unset,
+`DEFAULT_ACADEMIC_DOMAINS` is used.
 """
 
 from __future__ import annotations
@@ -18,6 +22,28 @@ import os
 
 from langchain_core.tools import tool
 from openai import OpenAI
+
+
+DEFAULT_ACADEMIC_DOMAINS: list[str] = [
+    "arxiv.org",
+    "scholar.google.com",
+    "semanticscholar.org",
+    "base-search.net",
+    "core.ac.uk",
+    "pubmed.ncbi.nlm.nih.gov",
+    "ncbi.nlm.nih.gov",
+    "biorxiv.org",
+    "medrxiv.org",
+    "ieeexplore.ieee.org",
+    "dl.acm.org",
+    "openreview.net",
+    "nature.com",
+    "science.org",
+    "springeropen.com",
+    "sciencedirect.com",
+    "ssrn.com",
+    "eric.ed.gov",
+]
 
 
 def _require_key() -> None:
@@ -30,6 +56,20 @@ def _get_client() -> OpenAI:
     api_key = os.getenv("OPENAI_API_KEY")
     base_url = os.getenv("OPENAI_BASE_URL", "https://api.aitunnel.ru/v1/")
     return OpenAI(api_key=api_key, base_url=base_url)
+
+
+def _get_allowed_domains() -> list[str]:
+    """Return the list of allowed academic domains.
+
+    Reads the `ACADEMIC_DOMAINS` environment variable (comma-separated).
+    If the variable is unset or empty, returns `DEFAULT_ACADEMIC_DOMAINS`.
+    """
+    raw = os.getenv("ACADEMIC_DOMAINS", "")
+    if not raw.strip():
+        return DEFAULT_ACADEMIC_DOMAINS
+
+    domains = [d.strip() for d in raw.split(",") if d.strip()]
+    return domains or DEFAULT_ACADEMIC_DOMAINS
 
 
 def make_search_tool(max_results: int = 5, model: str | None = None):
@@ -59,7 +99,16 @@ def make_search_tool(max_results: int = 5, model: str | None = None):
                 {"role": "system", "content": SYSTEM},
                 {"role": "user", "content": query},
             ],
-            tools=[{"type": "aitunnel:web_search"}],
+            tools=[
+                {
+                    "type": "aitunnel:web_search",
+                    "parameters": {
+                        "engine": "exa",
+                        "max_results": max_results,
+                        "allowed_domains": _get_allowed_domains(),
+                    },
+                }
+            ],
         )
         return (resp.choices[0].message.content or "").strip()
 
@@ -91,7 +140,16 @@ def make_extract_tool(model: str | None = None):
                 {"role": "system", "content": SYSTEM},
                 {"role": "user", "content": urls},
             ],
-            tools=[{"type": "aitunnel:web_search"}],
+            tools=[
+                {
+                    "type": "aitunnel:web_search",
+                    "parameters": {
+                        "engine": "exa",
+                        "max_results": 5,
+                        "allowed_domains": _get_allowed_domains(),
+                    },
+                }
+            ],
         )
         return (resp.choices[0].message.content or "").strip()
 
