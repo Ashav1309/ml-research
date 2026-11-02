@@ -23,6 +23,7 @@ from deep_research.prompts import CITATION_AUDIT_SYSTEM
 from deep_research.state import (
     Citation,
     CitationAudit,
+    FlaggedClaim,
     ResearchState,
     SourceRecord,
 )
