@@ -260,7 +260,27 @@ Tasks:
    and the snippet that supposedly supports it, single-source major claims.
 
 The writer will be instructed to cite ONLY the sources in your registry.
-Do not invent sources. If a claim has no support, list it in flagged_issues.
+Do not invent sources. If a claim has no support, list it in flagged_claims.
+
+Return your audit as a JSON object with fields:
+ sources, claim_source_mappings, flagged_claims.
+
+For flagged_claims: each entry has:
+  - verbatim_sentence: the EXACT sentence from the answer (Evidence /
+    specialist notes block) that contains the problematic claim.
+    Copy it character-for-character, preserving markdown (**bold**,
+    em-dashes —, unicode symbols) and punctuation. It MUST be a
+    literal substring of the answer.
+  - verdict: one of unverified | single_source | snippet_mismatch |
+    unsupported | source_quality
+  - reason: 1-2 sentences explaining the issue.
+
+HARD RULE: If you cannot copy an exact sentence from the answer
+(e.g. because the claim is a merge of several sentences, or because
+the answer does not literally contain your paraphrase), DO NOT flag
+it. It is better to miss a flag than to fabricate a verbatim_sentence.
+The finalize step will reject flags whose verbatim_sentence is not
+a literal substring of the answer.
 
 CRITICAL: Before writing SNIPPET_MISMATCH, re-read the FULL snippet text
 for that source. If the snippet contains the keyword or synonym (e.g.

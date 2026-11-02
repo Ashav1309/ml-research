@@ -93,7 +93,7 @@ def citation_audit_node(state: ResearchState) -> dict[str, Any]:
         # Empty audit so the writer/finalizer can still proceed (e.g. meta route
         # ends up here in edge cases — we want a coherent path).
         return {
-            "citation_audit": CitationAudit(flagged_issues=["no citations gathered"]),
+            "citation_audit": CitationAudit(flagged_claims=[]),
             "warnings": ["citation_audit: no citations to audit"],
         }
 
@@ -239,10 +239,7 @@ def citation_audit_node(state: ResearchState) -> dict[str, Any]:
                 return {
                     "citation_audit": CitationAudit(
                         sources=registry,
-                        flagged_issues=[
-                            "audit parse failed (2 attempts): "
-                            + str(e)
-                        ],
+                        flagged_claims=[],
                     ),
                     "warnings": [
                         "citation_audit: parse failed after retry; using raw registry only"
@@ -254,7 +251,7 @@ def citation_audit_node(state: ResearchState) -> dict[str, Any]:
         return {
             "citation_audit": CitationAudit(
                 sources=registry,
-                flagged_issues=[f"audit parse failed: {e}"],
+                flagged_claims=[],
             ),
             "warnings": [f"citation_audit: parse failed ({e}); using raw registry only"],
         }
@@ -277,9 +274,13 @@ def citation_audit_node(state: ResearchState) -> dict[str, Any]:
 
     for s in audited.sources:
         if s.id not in mapped_ids:
-            audited.flagged_issues.append(
-                f"UNUSED_SOURCE: {s.id} ({s.url}) is in the registry but not mapped "
-                "to any claim. Do not cite it in the final report unless a claim is added."
+            audited.flagged_claims.append(
+                FlaggedClaim(
+                    verbatim_sentence="",
+                    verdict="unverified",
+                    reason=f"UNUSED_SOURCE: {s.id} ({s.url}) is in the registry but not mapped "
+                           "to any claim. Do not cite it in the final report unless a claim is added."
+                )
             )
 
     return {"citation_audit": audited}

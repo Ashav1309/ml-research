@@ -201,65 +201,25 @@ def shallow_finalize_node(state: ResearchState) -> dict[str, Any]:
 
     # Mark unverified claims in the answer text
     marked_count = 0
-    for issue in issues:
-        # Only handle specific prefixes
-        prefix = None
-        if issue.startswith("SNIPPET_MISMATCH:"):
-            prefix = "SNIPPET_MISMATCH:"
-        elif issue.startswith("UNSUPPORTED:"):
-            prefix = "UNSUPPORTED:"
-        elif issue.startswith("UNUSED_SOURCE:"):
-            prefix = "UNUSED_SOURCE:"
-        elif issue.startswith("SINGLE_SOURCE:"):
-            prefix = "SINGLE_SOURCE:"
-        elif issue.startswith("SOURCE_QUALITY:"):
-            prefix = "SOURCE_QUALITY:"
-        if not prefix:
+    claims = getattr(audit, "flagged_claims", []) if audit else []
+    for claim in claims:
+        vs = claim.verbatim_sentence.strip()
+        if not vs:
             continue
-
-        # Extract claim fragment
-        fragment = ""
-        # Try single-quoted substring
-        m = re.search(r"'([^']*)'", issue)
-        if m:
-            fragment = m.group(1)
-        else:
-            # Use text after prefix up to first period
-            after = issue[len(prefix):].strip()
-            # Try: "The specific claim that X is supported" / "Claim about X"
-            m2 = re.search(
-                r"(?:claim that|claim about|claim:|hyperparameters?|the fact that|that)\s+(.{15,180}?)(?=\s+(?:is supported|are supported|is cited|relies|has no|appears|may))",
-                after, re.IGNORECASE,
-            )
-            if m2:
-                fragment = m2.group(1).strip()
-            else:
-                # Fallback: first sentence, max 120 chars
-                period_pos = after.find(".")
-                fragment = (after[:period_pos] if period_pos != -1 else after).strip()
-                if len(fragment) > 120:
-                    fragment = fragment[:120].rsplit(" ", 1)[0]
-
-        if not fragment:
-            continue
-
-        # Case-insensitive search in answer
-        idx = answer.lower().find(fragment.lower())
+        idx = answer.find(vs)
         if idx == -1:
+            # INVARIANT VIOLATED: audit fabricated or paraphrased
+            state.setdefault("warnings", []).append(
+                f"unverified rejected: verbatim not in answer "
+                f"[{claim.verdict}] {vs[:60]!r}"
+            )
             continue
-
-        # Find end of sentence containing the fragment
-        # Search for next sentence terminator after the match
-        end_pos = idx + len(fragment)
-        while end_pos < len(answer):
-            ch = answer[end_pos]
-            if ch in ".!?":
-                # Insert after terminator
-                insert_pos = end_pos + 1
-                answer = answer[:insert_pos] + " [unverified]" + answer[insert_pos:]
-                marked_count += 1
-                break
-            end_pos += 1
+        # Skip if already marked (avoid double [unverified] on same text)
+        end = idx + len(vs)
+        if answer[end:end + 13].startswith(" [unverified]"):
+            continue
+        answer = answer[:end] + " [unverified]" + answer[end:]
+        marked_count += 1
 
     # Build final report
     report = answer.strip()

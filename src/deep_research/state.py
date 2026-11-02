@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal, TypedDict
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 
 # ─── Reducers ────────────────────────────────────────────────────────────────
@@ -188,13 +188,36 @@ class ClaimSourceMapping(BaseModel):
     confidence: Literal["high", "medium", "low"] = "medium"
 
 
+class FlaggedClaim(BaseModel):
+    verbatim_sentence: str = Field(
+        description=(
+            "EXACT sentence from shallow_answer, copied character-for-"
+            "character. Must be a literal substring of shallow_answer. "
+            "Do not paraphrase, do not fix grammar, do not strip markdown."
+        )
+    )
+    verdict: Literal[
+        "unverified", "single_source", "snippet_mismatch",
+        "unsupported", "source_quality"
+    ] = Field(description="Type of issue.")
+    reason: str = Field(
+        description="Short explanation (1-2 sentences) of why this claim is flagged."
+    )
+
+
 class CitationAudit(BaseModel):
     sources: list[SourceRecord] = Field(default_factory=list)
     claim_source_mappings: list[ClaimSourceMapping] = Field(default_factory=list)
-    flagged_issues: list[str] = Field(
-        default_factory=list,
-        description="Weak/unsupported/mismatched citation problems for the writer to handle",
-    )
+    flagged_claims: list[FlaggedClaim] = Field(default_factory=list)
+
+    @computed_field
+    @property
+    def flagged_issues(self) -> list[str]:
+        return [
+            f"{c.verdict.upper()}: {c.reason} "
+            f"(sentence: \"{c.verbatim_sentence[:80]}...\")"
+            for c in self.flagged_claims
+        ]
 
 
 # ─── 8. Final report ────────────────────────────────────────────────────────
