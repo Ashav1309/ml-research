@@ -261,6 +261,12 @@ class ResearchState(TypedDict, total=False):
     draft_report: str   # writer output, pre-refinement
     final_report: str   # refiner output — this is what the CLI prints
 
+    # Source verification side-channel
+    # Populated by shallow_researcher, consumed by citation_audit.
+    # Not merged across nodes — overwritten by each researcher run.
+    _last_search_results: list[dict]
+    _verification_meta: dict[str, dict]
+
     # Debugging — every node may append warnings without overwriting peers'
     warnings: Annotated[list[str], _add_lists]
 
