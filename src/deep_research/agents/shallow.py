@@ -223,6 +223,7 @@ def shallow_researcher_node(state: ResearchState) -> dict[str, Any]:
         "shallow_citations": citations,
         "shallow_sufficient": sufficient,
         "_last_search_results": deduped,
+        "_verification_meta": state.get("_verification_meta", {}),
     }
 
 
