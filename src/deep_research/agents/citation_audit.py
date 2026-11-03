@@ -154,6 +154,7 @@ def citation_audit_node(state: ResearchState) -> dict[str, Any]:
         if sc.url and sc.snippet:
             snippet_by_url[sc.url] = sc.snippet
 
+    _vmeta = state.get("_verification_meta", {}) or {}
     registry_blob_lines: list[str] = []
     for s in registry:
         snippet = snippet_by_url.get(s.url, "")
@@ -162,6 +163,13 @@ def citation_audit_node(state: ResearchState) -> dict[str, Any]:
         line = f"- {s.id}: {s.url}"
         if s.title:
             line += f" | title: {s.title}"
+        _m = _vmeta.get(s.url, {})
+        if _m.get("year") is not None:
+            line += f" | year: {_m['year']}"
+        if _m.get("citation_count") is not None:
+            line += f" | cites: {_m['citation_count']}"
+        if _m.get("venue"):
+            line += f" | venue: {_m['venue']}"
         line += f" | snippet: \"{snippet_display}\""
         registry_blob_lines.append(line)
     registry_blob = "\n".join(registry_blob_lines)

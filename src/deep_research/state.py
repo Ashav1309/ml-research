@@ -198,7 +198,8 @@ class FlaggedClaim(BaseModel):
     )
     verdict: Literal[
         "unverified", "single_source", "snippet_mismatch",
-        "unsupported", "source_quality"
+        "unsupported", "source_quality",
+        "outdated_source", "non_canonical",
     ] = Field(description="Type of issue.")
     reason: str = Field(
         description="Short explanation (1-2 sentences) of why this claim is flagged."

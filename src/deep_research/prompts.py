@@ -282,6 +282,19 @@ it. It is better to miss a flag than to fabricate a verbatim_sentence.
 The finalize step will reject flags whose verbatim_sentence is not
 a literal substring of the answer.
 
+SOURCE FRESHNESS RULES (you now see year / cites / venue for each source):
+- Flag verdict="non_canonical" ONLY if year < 2020 AND (cites is None or cites < 50)
+  AND venue is not a top-tier venue (NeurIPS, ICML, ICLR, ACL, EMNLP, NAACL,
+  CVPR, ICCV, ECCV, JMLR, TPAMI, KDD, WWW, TACL).
+- Flag verdict="outdated_source" ONLY if year < 2022 AND (cites is None or cites < 100)
+  AND venue is not top-tier (same list).
+- DO NOT flag canonical works. A source with cites >= 5000 is canonical,
+  regardless of year (e.g., "Attention Is All You Need" 2017 with 100k+ cites).
+- If year is None or cites is None (API failed), do NOT flag freshness —
+  prefer no flag over false flag.
+- Same rules as other verdicts: verbatim_sentence MUST be a literal
+  substring of the answer, or do not flag.
+
 CRITICAL: Before writing SNIPPET_MISMATCH, re-read the FULL snippet text
 for that source. If the snippet contains the keyword or synonym (e.g.
 'residual connection', 'layer normalization', 'softmax', 'positional
