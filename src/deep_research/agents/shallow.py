@@ -21,6 +21,7 @@ from deep_research.config import SHALLOW_MAX_SEARCHES, model_for
 from deep_research.prompts import SHALLOW_RESEARCHER_SYSTEM
 from deep_research.state import Citation, ResearchState
 from deep_research.tools import make_search_tool, make_structured_search_tool
+from deep_research.source_verifier import verify_batch
 
 _shallow_agent = None
 
@@ -179,6 +180,42 @@ def shallow_researcher_node(state: ResearchState) -> dict[str, Any]:
         if _normalize_url(c.url) not in search_urls:
             state.setdefault("warnings", []).append(
                 f"citation url not from web_search: {c.url}"
+            )
+
+    # === Source verification (EBT: every cited URL must resolve) ===
+    _urls = [c.url for c in citations if c.url]
+    if _urls:
+        _verifs = verify_batch(_urls)
+        _vmap = {v["url"]: v for v in _verifs}
+        _kept: list[Citation] = []
+        _dropped: list[str] = []
+        for _c in citations:
+            _v = _vmap.get(_c.url) if _c.url else None
+            if _v is None:
+                _kept.append(_c)
+                continue
+            if _v["verification"] == "not_found":
+                _dropped.append(_c.url)
+                continue
+            if _v["verification"] == "error":
+                state.setdefault("warnings", []).append(
+                    f"source_verification: error for {_c.url}: "
+                    f"{_v.get('error') or _v.get('api_errors')}"
+                )
+            state.setdefault("_verification_meta", {})[_c.url] = {
+                "verification": _v["verification"],
+                "year": _v.get("year"),
+                "venue": _v.get("venue"),
+                "citation_count": _v.get("citation_count"),
+                "influential_citation_count": _v.get("influential_citation_count"),
+                "apis_used": _v.get("apis_used", []),
+            }
+            _kept.append(_c)
+        citations = _kept
+        if _dropped:
+            state.setdefault("warnings", []).append(
+                f"source_verification: dropped {len(_dropped)} not_found source(s): "
+                + ", ".join(_dropped)
             )
 
     return {
