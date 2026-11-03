@@ -70,4 +70,11 @@ def verify_batch(urls: list[str]) -> list[dict[str, Any]]:
 
 
 if __name__ == "__main__":
-    print(verify_source("https://arxiv.org/abs/1706.03762"))
+    real = verify_source("https://arxiv.org/abs/1706.03762")
+    fake = verify_source("https://arxiv.org/abs/9999.99999")
+    print("REAL:", real["verification"], "|", real.get("title"))
+    print("FAKE:", fake["verification"])
+    assert real["verification"] == "verified", "known-good URL should verify"
+    assert fake["verification"] == "not_found", "bogus URL should not verify"
+    print("SMOKE TEST PASSED")
+
