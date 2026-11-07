@@ -55,3 +55,11 @@ Thumbs.db
 .langgraph/
 .langgraph_api/
 .aider*
+
+# MLflow / DVC / Vector DB artifacts
+mlflow.db
+mlruns/
+mlartifacts/
+qdrant_storage/
+.dvc/cache/
+.dvc/tmp/
