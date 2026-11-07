@@ -117,8 +117,8 @@ def shallow_researcher_node(state: ResearchState) -> dict[str, Any]:
     """Run a small ReAct loop. Set shallow_sufficient flag for the router."""
 
     # === MEMORY: cache lookup ===
-    _cached = lookup_sources(state["question"], top_k=5, min_score=0.70)
-    if len(_cached) >= 3:
+    _cached = lookup_sources(state["question"], top_k=5, min_score=0.65)
+    if len(_cached) >= 2:
         _cached_cites = [
             Citation(url=c["url"], title=c["title"], snippet=c["snippet"])
             for c in _cached
