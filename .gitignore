@@ -54,3 +54,4 @@ Thumbs.db
 # LangGraph local artifacts
 .langgraph/
 .langgraph_api/
+.aider*
