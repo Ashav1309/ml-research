@@ -266,6 +266,7 @@ class ResearchState(TypedDict, total=False):
     # Not merged across nodes — overwritten by each researcher run.
     _last_search_results: list[dict]
     _verification_meta: dict[str, dict]
+    cache_hit: bool  # True if answer built from Qdrant memory (no web_search)
 
     # Debugging — every node may append warnings without overwriting peers'
     warnings: Annotated[list[str], _add_lists]

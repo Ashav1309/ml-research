@@ -22,6 +22,7 @@ from deep_research.prompts import SHALLOW_RESEARCHER_SYSTEM
 from deep_research.state import Citation, ResearchState
 from deep_research.tools import make_search_tool, make_structured_search_tool
 from deep_research.source_verifier import verify_batch
+from deep_research.memory import lookup_sources, store_sources
 
 _shallow_agent = None
 
@@ -114,6 +115,57 @@ def _normalize_url(url: str) -> str:
 
 def shallow_researcher_node(state: ResearchState) -> dict[str, Any]:
     """Run a small ReAct loop. Set shallow_sufficient flag for the router."""
+
+    # === MEMORY: cache lookup ===
+    _cached = lookup_sources(state["question"], top_k=5, min_score=0.70)
+    if len(_cached) >= 3:
+        _cached_cites = [
+            Citation(url=c["url"], title=c["title"], snippet=c["snippet"])
+            for c in _cached
+        ]
+        _prompt = (
+            f"Answer the question using ONLY the sources below.\n"
+            f"Question: {state['question']}\n\n"
+            f"Sources:\n"
+            + "\n".join(
+                f"[{i+1}] {c.url}\nTitle: {c.title}\nSnippet: {c.snippet}"
+                for i, c in enumerate(_cached_cites)
+            )
+            + "\n\nWrite a concise answer (≤250 words). Cite with [n]. "
+              "Do NOT add URLs from your training data."
+        )
+        _answer = model_for("shallow").invoke(_prompt).content
+
+        _urls = [c.url for c in _cached_cites]
+        _verifs = verify_batch(_urls)
+        _vmap = {v["url"]: v for v in _verifs}
+        _vmeta_hit: dict[str, dict] = {}
+        for c in _cached_cites:
+            _v = _vmap.get(c.url)
+            if _v:
+                _vmeta_hit[c.url] = {
+                    "verification": _v["verification"],
+                    "year": _v.get("year"),
+                    "venue": _v.get("venue"),
+                    "citation_count": _v.get("citation_count"),
+                    "influential_citation_count": _v.get("influential_citation_count"),
+                    "apis_used": _v.get("apis_used", []),
+                }
+
+        state.setdefault("warnings", []).append(
+            f"memory: cache_hit with {len(_cached_cites)} sources "
+            f"(top score {_cached[0]['score']:.3f})"
+        )
+        return {
+            "shallow_answer": _answer,
+            "shallow_citations": _cached_cites,
+            "shallow_sufficient": True,
+            "_last_search_results": [],
+            "_verification_meta": _vmeta_hit,
+            "cache_hit": True,
+        }
+    # === cache miss: normal path below ===
+
     agent = _get_shallow_agent()
     result = agent.invoke({"messages": [HumanMessage(content=state["question"])]})
     answer = result["messages"][-1].content
@@ -217,6 +269,13 @@ def shallow_researcher_node(state: ResearchState) -> dict[str, Any]:
                 f"source_verification: dropped {len(_dropped)} not_found source(s): "
                 + ", ".join(_dropped)
             )
+
+    # === MEMORY: store new sources ===
+    store_sources(
+        state["question"],
+        [{"url": c.url, "title": c.title, "snippet": c.snippet} for c in citations],
+        state.get("_verification_meta", {}),
+    )
 
     return {
         "shallow_answer": answer,
