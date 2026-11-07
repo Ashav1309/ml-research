@@ -4,6 +4,7 @@ import uuid
 import datetime
 
 import torch
+import mlflow
 from qdrant_client import QdrantClient
 from qdrant_client.models import VectorParams, Distance, PointStruct
 from sentence_transformers import SentenceTransformer
@@ -51,42 +52,50 @@ def _is_fresh(stored_at: str) -> bool:
 
 
 def lookup_sources(query: str, top_k: int = 5, min_score: float = 0.55) -> list[dict]:
-    try:
-        client = _get_client()
-        encoder = _get_encoder()
-        vec = encoder.encode(query).tolist()
-        response = client.query_points(
-            collection_name=COLLECTION,
-            query=vec,
-            limit=top_k * 2,
-            with_payload=True,
-        )
-        hits = response.points
-        out, seen = [], set()
-        for h in hits:
-            if h.score < min_score:
-                continue
-            payload = h.payload or {}
-            url = payload.get("url")
-            if not url or url in seen:
-                continue
-            if not _is_fresh(payload.get("stored_at", "")):
-                continue
-            seen.add(url)
-            out.append({
-                "url": url,
-                "title": payload.get("title", ""),
-                "snippet": payload.get("snippet", ""),
-                "score": float(h.score),
-                "stored_at": payload.get("stored_at"),
-                "query": payload.get("query"),
+    with mlflow.start_span(name="qdrant_lookup", span_type="RETRIEVER") as span:
+        span.set_inputs({"query": query, "top_k": top_k, "min_score": min_score})
+        try:
+            client = _get_client()
+            encoder = _get_encoder()
+            vec = encoder.encode(query).tolist()
+            response = client.query_points(
+                collection_name=COLLECTION,
+                query=vec,
+                limit=top_k * 2,
+                with_payload=True,
+            )
+            hits = response.points
+            out, seen = [], set()
+            for h in hits:
+                if h.score < min_score:
+                    continue
+                payload = h.payload or {}
+                url = payload.get("url")
+                if not url or url in seen:
+                    continue
+                if not _is_fresh(payload.get("stored_at", "")):
+                    continue
+                seen.add(url)
+                out.append({
+                    "url": url,
+                    "title": payload.get("title", ""),
+                    "snippet": payload.get("snippet", ""),
+                    "score": float(h.score),
+                    "stored_at": payload.get("stored_at"),
+                    "query": payload.get("query"),
+                })
+                if len(out) >= top_k:
+                    break
+            span.set_outputs({
+                "n_hits": len(out),
+                "top_score": round(float(hits[0].score), 4) if hits else None,
+                "scores": [round(float(h.score), 3) for h in hits[:top_k]],
             })
-            if len(out) >= top_k:
-                break
-        return out
-    except Exception as exc:
-        print(f"[memory] lookup_sources failed: {exc}", file=sys.stderr)
-        return []
+            return out
+        except Exception as exc:
+            span.set_outputs({"error": str(exc)})
+            print(f"[memory] lookup_sources failed: {exc}", file=sys.stderr)
+            return []
 
 
 def store_sources(
@@ -94,39 +103,44 @@ def store_sources(
     sources: list[dict],
     verification_meta: dict[str, dict] | None = None,
 ) -> int:
-    try:
-        if not sources:
-            return 0
-        client = _get_client()
-        encoder = _get_encoder()
-        vmeta = verification_meta or {}
-        texts = [f"{s.get('title','')} {s.get('snippet','')}".strip() for s in sources]
-        vectors = encoder.encode(texts, batch_size=16).tolist()
-        now = datetime.datetime.utcnow().isoformat()
-        points = []
-        for src, vec in zip(sources, vectors):
-            url = src.get("url")
-            if not url:
-                continue
-            points.append(
-                PointStruct(
-                    id=_url_id(url),
-                    vector=vec,
-                    payload={
-                        "url": url,
-                        "title": src.get("title", ""),
-                        "snippet": src.get("snippet", ""),
-                        "query": query,
-                        "stored_at": now,
-                        "verification": vmeta.get(url),
-                    },
+    with mlflow.start_span(name="qdrant_store", span_type="TOOL") as span:
+        span.set_inputs({"query": query, "n_sources": len(sources)})
+        try:
+            if not sources:
+                span.set_outputs({"n_points": 0})
+                return 0
+            client = _get_client()
+            encoder = _get_encoder()
+            vmeta = verification_meta or {}
+            texts = [f"{s.get('title','')} {s.get('snippet','')}".strip() for s in sources]
+            vectors = encoder.encode(texts, batch_size=16).tolist()
+            now = datetime.datetime.utcnow().isoformat()
+            points = []
+            for src, vec in zip(sources, vectors):
+                url = src.get("url")
+                if not url:
+                    continue
+                points.append(
+                    PointStruct(
+                        id=_url_id(url),
+                        vector=vec,
+                        payload={
+                            "url": url,
+                            "title": src.get("title", ""),
+                            "snippet": src.get("snippet", ""),
+                            "query": query,
+                            "stored_at": now,
+                            "verification": vmeta.get(url),
+                        },
+                    )
                 )
-            )
-        client.upsert(collection_name=COLLECTION, points=points)
-        return len(points)
-    except Exception as exc:
-        print(f"[memory] store_sources failed: {exc}", file=sys.stderr)
-        return 0
+            client.upsert(collection_name=COLLECTION, points=points)
+            span.set_outputs({"n_points": len(points)})
+            return len(points)
+        except Exception as exc:
+            span.set_outputs({"error": str(exc)})
+            print(f"[memory] store_sources failed: {exc}", file=sys.stderr)
+            return 0
 
 
 def stats() -> dict:
