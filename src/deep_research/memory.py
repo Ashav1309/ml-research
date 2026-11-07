@@ -88,8 +88,8 @@ def lookup_sources(query: str, top_k: int = 5, min_score: float = 0.55) -> list[
                     break
             span.set_outputs({
                 "n_hits": len(out),
-                "top_score": round(float(hits[0].score), 4) if hits else None,
-                "scores": [round(float(h.score), 3) for h in hits[:top_k]],
+                "top_score": round(float(out[0]["score"]), 4) if out else None,
+                "scores": [round(float(o["score"]), 3) for o in out],
             })
             return out
         except Exception as exc:

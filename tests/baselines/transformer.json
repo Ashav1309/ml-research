@@ -1,0 +1,9 @@
+{
+  "query": "What are the main components of a transformer architecture?",
+  "path": "shallow",
+  "expect": {
+    "cache_hit": true,
+   "min_n_hits": 1,
+    "min_top_score": 0.65
+  }
+}

@@ -138,6 +138,12 @@ def shallow_researcher_node(state: ResearchState) -> dict[str, Any]:
 
         _urls = [c.url for c in _cached_cites]
         _verifs = verify_batch(_urls)
+        for _v_err in _verifs:
+            if _v_err.get("verification") == "error":
+                _err_msg = _v_err.get("error") or _v_err.get("reason") or "unknown"
+                state.setdefault("warnings", []).append(
+                    f"source_verification: error for {_v_err['url']}: {_err_msg}"
+                )
         _vmap = {v["url"]: v for v in _verifs}
         _vmeta_hit: dict[str, dict] = {}
         for c in _cached_cites:
