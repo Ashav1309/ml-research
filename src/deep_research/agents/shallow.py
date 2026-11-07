@@ -14,7 +14,7 @@ import json
 import re
 from typing import Any
 
-from langchain_core.messages import HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.prebuilt import create_react_agent
 
 from deep_research.config import SHALLOW_MAX_SEARCHES, model_for
@@ -167,7 +167,15 @@ def shallow_researcher_node(state: ResearchState) -> dict[str, Any]:
     # === cache miss: normal path below ===
 
     agent = _get_shallow_agent()
-    result = agent.invoke({"messages": [HumanMessage(content=state["question"])]})
+    
+    try:
+        result = agent.invoke(
+            {"messages": [HumanMessage(content=state["question"])]},
+            config={"recursion_limit": 10}
+        )
+    except GraphRecursionError:
+        result = {"messages": [AIMessage(content="Shallow research exceeded recursion limit; returning partial results.")]}
+    
     answer = result["messages"][-1].content
 
     sufficient = "INSUFFICIENT" not in answer.upper()

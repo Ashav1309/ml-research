@@ -3,6 +3,7 @@ import sys
 import uuid
 import datetime
 
+import torch
 from qdrant_client import QdrantClient
 from qdrant_client.models import VectorParams, Distance, PointStruct
 from sentence_transformers import SentenceTransformer
@@ -10,8 +11,9 @@ from sentence_transformers import SentenceTransformer
 _client = None
 _encoder = None
 
-COLLECTION = "research_sources"
-MODEL_NAME = "all-MiniLM-L6-v2"
+COLLECTION = "research_sources_v2"
+#MODEL_NAME = "all-MiniLM-L6-v2"
+MODEL_NAME = "BAAI/bge-base-en-v1.5"
 QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 FRESH_DAYS = int(os.getenv("QDRANT_FRESH_DAYS", "30"))
 
@@ -23,7 +25,7 @@ def _get_client() -> QdrantClient:
         if not _client.collection_exists(COLLECTION):
             _client.create_collection(
                 COLLECTION,
-                vectors_config=VectorParams(size=384, distance=Distance.COSINE),
+                vectors_config=VectorParams(size=768, distance=Distance.COSINE),
             )
     return _client
 
@@ -31,7 +33,8 @@ def _get_client() -> QdrantClient:
 def _get_encoder() -> SentenceTransformer:
     global _encoder
     if _encoder is None:
-        _encoder = SentenceTransformer(MODEL_NAME)
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        _encoder = SentenceTransformer(MODEL_NAME, device=device)
     return _encoder
 
 
